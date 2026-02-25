@@ -2,218 +2,195 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-
-<title>Ebook App</title>
-
-<link rel="manifest" href="manifest.json">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF E-Book Reader</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/turn.js@4/turn.min.js"></script>
 
 <style>
 
+.goto{
+display:flex;
+gap:10px;
+margin-top:10px;
+}
+
+.goto input{
+flex:1;
+padding:12px;
+border-radius:10px;
+border:none;
+}
+
 body{
-font-family:system-ui;
-margin:0;
+font-family: system-ui;
 background:#0f172a;
 color:white;
 display:flex;
 flex-direction:column;
 align-items:center;
+padding:20px;
 }
 
-header{
-width:100%;
-padding:15px;
-display:flex;
-justify-content:space-between;
+h1{
+font-weight:600;
+margin-bottom:10px;
+}
+
+.reader{
 background:#020617;
+padding:20px;
+border-radius:16px;
+box-shadow:0 10px 40px rgba(0,0,0,.4);
+max-width:900px;
+width:100%;
 }
 
-button{
-padding:8px 14px;
-border-radius:8px;
-border:none;
-cursor:pointer;
-}
-
-#book{
-width:90%;
-max-width:800px;
-height:600px;
-margin-top:20px;
-}
-
-.page{
+canvas{
+width:100%;
+border-radius:10px;
 background:white;
-color:black;
-display:flex;
-align-items:center;
-justify-content:center;
-font-size:20px;
-}
-
-.dark{
-background:#0f172a;
-color:white;
 }
 
 .controls{
-margin:15px;
 display:flex;
+justify-content:space-between;
+margin-top:10px;
 gap:10px;
-flex-wrap:wrap;
-justify-content:center;
+}
+
+button{
+flex:1;
+padding:12px;
+border:none;
+border-radius:10px;
+background:#6366f1;
+color:white;
+font-weight:600;
+cursor:pointer;
+}
+
+button:hover{
+background:#4f46e5;
+}
+
+input{
+margin-bottom:15px;
+}
+
+.pageinfo{
+text-align:center;
+margin-top:10px;
+opacity:.8;
 }
 
 </style>
 </head>
 <body>
 
-<header>
-<div>📚 My Ebook</div>
-<button onclick="toggleMode()">🌙 Mode</button>
-</header>
+<h1>📚 PDF E-Book Reader</h1>
+
+<div class="reader">
 
 <input type="file" id="upload" accept="application/pdf">
-
-<div id="book"></div>
-
-<div class="controls">
-<button onclick="prevPage()">⬅</button>
-<button onclick="nextPage()">➡</button>
-<button onclick="bookmark()">🔖 Bookmark</button>
-<button onclick="goBookmark()">⭐ Buka Bookmark</button>
+<div class="goto">
+<input type="number" id="goto-page" placeholder="Masuk halaman..." min="1">
+<button id="go">Go</button>
 </div>
 
+<canvas id="pdf-render"></canvas>
+
+<div class="controls">
+<button id="prev">⬅ Prev</button>
+<button id="next">Next ➡</button>
+</div>
+
+<div class="pageinfo">
+Halaman <span id="page-num"></span> / <span id="page-count"></span>
+<br><br><h6>created by:msfx</h6>
+</div>
+
+</div>
+
+
 <script>
+    document.getElementById('go').addEventListener('click', goToPage)
 
-let pdfDoc=null
-let currentPage=1
-
-const book=document.getElementById("book")
-
-document.getElementById("upload").addEventListener("change",function(e){
-
-let file=e.target.files[0]
-let reader=new FileReader()
-
-reader.onload=function(){
-
-let typedarray=new Uint8Array(this.result)
-
-pdfjsLib.getDocument(typedarray).promise.then(pdf=>{
-
-pdfDoc=pdf
-loadPages()
-
+document.getElementById('goto-page').addEventListener('keypress', function(e){
+if(e.key === 'Enter'){
+goToPage()
+}
 })
 
+function goToPage(){
+
+let pageInput = parseInt(document.getElementById('goto-page').value)
+
+if(!pdfDoc) return
+
+if(pageInput >= 1 && pageInput <= pdfDoc.numPages){
+pageNum = pageInput
+renderPage(pageNum)
+}
+
+}
+
+let pdfDoc = null
+let pageNum = 1
+let canvas = document.getElementById('pdf-render')
+let ctx = canvas.getContext('2d')
+
+document.getElementById('upload').addEventListener('change', function(e){
+
+let file = e.target.files[0]
+let reader = new FileReader()
+
+reader.onload = function(){
+let typedarray = new Uint8Array(this.result)
+
+pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+pdfDoc = pdf
+document.getElementById('page-count').textContent = pdf.numPages
+renderPage(pageNum)
+})
 }
 
 reader.readAsArrayBuffer(file)
 
 })
 
-function loadPages(){
-
-book.innerHTML=""
-
-for(let i=1;i<=pdfDoc.numPages;i++){
-
-let div=document.createElement("div")
-div.className="page"
-div.id="page-"+i
-div.innerHTML="Loading "+i
-
-book.appendChild(div)
-
-renderPage(i)
-
-}
-
-$("#book").turn({
-width:800,
-height:600,
-autoCenter:true
-})
-
-let saved=localStorage.getItem("lastPage")
-
-if(saved){
-$("#book").turn("page",saved)
-}
-
-}
-
 function renderPage(num){
 
-pdfDoc.getPage(num).then(page=>{
+pdfDoc.getPage(num).then(page => {
 
-let viewport=page.getViewport({scale:1})
+let viewport = page.getViewport({scale:1.5})
+canvas.height = viewport.height
+canvas.width = viewport.width
 
-let canvas=document.createElement("canvas")
-let ctx=canvas.getContext("2d")
+let renderContext = {
+canvasContext: ctx,
+viewport: viewport
+}
 
-canvas.height=viewport.height
-canvas.width=viewport.width
+page.render(renderContext)
 
-let div=document.getElementById("page-"+num)
-div.innerHTML=""
-div.appendChild(canvas)
-
-page.render({
-canvasContext:ctx,
-viewport:viewport
-})
+document.getElementById('page-num').textContent = num
 
 })
 
 }
 
-function nextPage(){
-$("#book").turn("next")
-saveProgress()
-}
+document.getElementById('next').addEventListener('click', () => {
+if(pageNum >= pdfDoc.numPages) return
+pageNum++
+renderPage(pageNum)
+})
 
-function prevPage(){
-$("#book").turn("previous")
-saveProgress()
-}
-
-function saveProgress(){
-let page=$("#book").turn("page")
-localStorage.setItem("lastPage",page)
-}
-
-function bookmark(){
-
-let page=$("#book").turn("page")
-localStorage.setItem("bookmark",page)
-alert("Bookmark disimpan halaman "+page)
-
-}
-
-function goBookmark(){
-
-let page=localStorage.getItem("bookmark")
-
-if(page){
-$("#book").turn("page",page)
-}
-
-}
-
-function toggleMode(){
-
-document.body.classList.toggle("dark")
-
-}
-
-if("serviceWorker" in navigator){
-navigator.serviceWorker.register("sw.js")
-}
+document.getElementById('prev').addEventListener('click', () => {
+if(pageNum <= 1) return
+pageNum--
+renderPage(pageNum)
+})
 
 </script>
 
